@@ -95,11 +95,13 @@ Before submitting, walk the draft-review checklist end-to-end and fix any item t
 
 ### 8. Submit hire request
 
+If the hire payload contains non-ASCII text (Korean, Chinese, Japanese, emoji, accented characters), do not pass inline JSON to `curl -d` or PowerShell native command arguments. On Windows that can silently turn text into `????`. Build the JSON from a UTF-8 file and send it with `--data-binary` plus `Content-Type: application/json; charset=utf-8`. In PowerShell, write the file with `Set-Content -Encoding utf8`.
+
 ```sh
 curl -sS -X POST "$PAPERCLIP_API_URL/api/companies/$PAPERCLIP_COMPANY_ID/agent-hires" \
   -H "Authorization: Bearer $PAPERCLIP_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{
+  -H "Content-Type: application/json; charset=utf-8" \
+  --data-binary '{
     "name": "CTO",
     "role": "cto",
     "title": "Chief Technology Officer",

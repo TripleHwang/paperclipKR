@@ -1,9 +1,124 @@
 {
   "app": {
+    "actions": {
+      "addAgent": "Add Agent",
+      "startOnboarding": "Start Onboarding"
+    },
+    "common": {
+      "company": "Company",
+      "loading": "Loading..."
+    },
     "noCompanies": {
       "title": "צרו את החברה הראשונה שלכם",
       "description": "התחילו ביצירת חברה.",
       "newCompany": "חברה חדשה"
+    },
+    "onboardingRoute": {
+      "addAgentTitle": "Add another agent to {{companyName}}",
+      "addAgentDescription": "Run onboarding again to add an agent and a starter task for this company.",
+      "createAnotherTitle": "Create another company",
+      "createAnotherDescription": "Run onboarding again to create another company and seed its first agent.",
+      "createFirstTitle": "Create your first company",
+      "createFirstDescription": "Get started by creating a company and your first agent."
+    },
+    "sidebar": {
+      "account": {
+        "accountBadge": "Account",
+        "localBadge": "Local",
+        "signedIn": "Signed in",
+        "localWorkspaceBoard": "Local workspace board",
+        "openAccountMenu": "Open account menu",
+        "viewProfile": "View profile",
+        "viewProfileDescription": "Open your activity, task, and usage ledger.",
+        "editProfile": "Edit profile",
+        "editProfileDescription": "Update your display name and avatar.",
+        "instanceSettings": "Instance settings",
+        "instanceSettingsDescription": "Jump back to the last settings page you opened.",
+        "documentation": "Documentation",
+        "documentationDescription": "Open Paperclip docs in a new tab.",
+        "switchToLight": "Switch to light mode",
+        "switchToDark": "Switch to dark mode",
+        "appearanceDescription": "Toggle the app appearance.",
+        "switchToKorean": "Switch to Korean",
+        "switchToEnglish": "Switch to English",
+        "languageDescription": "Change the interface language.",
+        "signingOut": "Signing out...",
+        "signOut": "Sign out",
+        "signOutDescription": "End this browser session."
+      },
+      "agents": {
+        "label": "Agents",
+        "new": "New agent",
+        "actions": "Agents section actions",
+        "browse": "Browse agents",
+        "sort": "Agent sort",
+        "edit": "Edit agent",
+        "pause": "Pause agent",
+        "resume": "Resume agent",
+        "updating": "Updating...",
+        "budgetPaused": "Budget paused",
+        "budgetPausedTitle": "Agent was paused by budget limits",
+        "paused": "Agent paused",
+        "resumed": "Agent resumed",
+        "couldNotPause": "Could not pause agent",
+        "couldNotResume": "Could not resume agent",
+        "openActions": "Open actions for {{agentName}}"
+      },
+      "companySettings": {
+        "title": "Company Settings",
+        "general": "General",
+        "environments": "Environments",
+        "access": "Access",
+        "invites": "Invites",
+        "secrets": "Secrets"
+      },
+      "instanceSettings": {
+        "title": "Instance Settings",
+        "profile": "Profile",
+        "general": "General",
+        "access": "Access",
+        "heartbeats": "Heartbeats",
+        "experimental": "Experimental",
+        "plugins": "Plugins",
+        "adapters": "Adapters"
+      },
+      "main": {
+        "openSearch": "Open search",
+        "newIssue": "New Issue",
+        "dashboard": "Dashboard",
+        "inbox": "Inbox",
+        "work": "Work",
+        "issues": "Issues",
+        "routines": "Routines",
+        "goals": "Goals",
+        "workspaces": "Workspaces",
+        "company": "Company",
+        "org": "Org",
+        "skills": "Skills",
+        "costs": "Costs",
+        "activity": "Activity",
+        "settings": "Settings"
+      },
+      "mobile": {
+        "navigation": "Mobile navigation",
+        "home": "Home",
+        "issues": "Issues",
+        "create": "Create",
+        "agents": "Agents",
+        "inbox": "Inbox"
+      },
+      "projects": {
+        "label": "Projects",
+        "new": "New project",
+        "actions": "Projects section actions",
+        "browse": "Browse projects",
+        "sort": "Project sort"
+      },
+      "sort": {
+        "top": "Top",
+        "alphabetical": "Alphabetical",
+        "recent": "Recent"
+      }
     }
   }
 }

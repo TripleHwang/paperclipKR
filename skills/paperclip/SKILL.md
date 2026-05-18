@@ -23,6 +23,8 @@ Manual local CLI mode (outside heartbeat runs): use `paperclipai agent local-cli
 
 **Run audit trail:** You MUST include `-H 'X-Paperclip-Run-Id: $PAPERCLIP_RUN_ID'` on ALL API requests that modify issues (checkout, update, comment, create subtask, release). This links your actions to the current heartbeat run for traceability.
 
+**Unicode-safe writes:** If any issue title, description, comment, document, or hire instructions contain non-ASCII text (Korean, Chinese, Japanese, emoji, accented characters), do not pass inline JSON to `curl -d` or PowerShell native command arguments. On Windows that can silently turn text into `????`. Use a UTF-8 helper such as `node scripts/paperclip-issue-create.mjs` for new issues and `scripts/paperclip-issue-update.sh` for issue updates/comments, or build the JSON body from a UTF-8 file and send it with `--data-binary` plus `Content-Type: application/json; charset=utf-8`. In PowerShell, avoid piping Korean text to native commands; write UTF-8 files with `Set-Content -Encoding utf8` and pass `--description-file` or `--payload-file`.
+
 ## The Heartbeat Procedure
 
 Follow these steps every time you wake up:
@@ -137,6 +139,31 @@ Status values: `backlog`, `todo`, `in_progress`, `in_review`, `done`, `blocked`,
 - `cancelled` — intentionally abandoned, not to be resumed.
 
 **Step 9 — Delegate if needed.** Create subtasks with `POST /api/companies/{companyId}/issues`. Always set `parentId` and `goalId`. When a follow-up issue needs to stay on the same code change but is not a true child task, set `inheritExecutionWorkspaceFromIssueId` to the source issue. Set `billingCode` for cross-team work.
+
+For non-ASCII titles or descriptions, prefer the UTF-8 helper instead of inline `curl -d`:
+
+```bash
+node scripts/paperclip-issue-create.mjs \
+  --title "한국어 하위 작업" \
+  --parent-id "$PAPERCLIP_TASK_ID" \
+  --goal-id "<goal-id>" \
+  --assignee-agent-id "<agent-id>" \
+  --description "한국어 설명을 그대로 보존해야 합니다."
+```
+
+In Windows PowerShell, write longer text to a UTF-8 file first:
+
+```powershell
+Set-Content -Path .paperclip-issue-description.md -Encoding utf8 -Value @"
+한국어 설명을 그대로 보존해야 합니다.
+"@
+node scripts/paperclip-issue-create.mjs `
+  --title "한국어 하위 작업" `
+  --parent-id "$env:PAPERCLIP_TASK_ID" `
+  --goal-id "<goal-id>" `
+  --assignee-agent-id "<agent-id>" `
+  --description-file .paperclip-issue-description.md
+```
 
 ## Issue Dependencies (Blockers)
 
