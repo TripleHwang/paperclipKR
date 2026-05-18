@@ -8,6 +8,7 @@ import {
   appendWithByteCap,
   buildInvocationEnvForLogs,
   DEFAULT_PAPERCLIP_AGENT_PROMPT_TEMPLATE,
+  decodeProcessOutputChunk,
   materializePaperclipSkillCopy,
   refreshPaperclipWorkspaceEnvForExecution,
   renderPaperclipWakePrompt,
@@ -47,6 +48,18 @@ async function waitForTextMatch(read: () => string, pattern: RegExp, timeoutMs =
   }
   return read().match(pattern);
 }
+
+describe("decodeProcessOutputChunk", () => {
+  it("preserves UTF-8 output", () => {
+    expect(decodeProcessOutputChunk(Buffer.from("한국어", "utf8"))).toBe("한국어");
+  });
+
+  it("decodes Windows Korean console output when UTF-8 would be lossy", () => {
+    const cp949Korean = Buffer.from([0xc7, 0xd1, 0xb1, 0xb9, 0xbe, 0xee]);
+    const decoded = decodeProcessOutputChunk(cp949Korean);
+    expect(decoded).toBe(process.platform === "win32" ? "한국어" : cp949Korean.toString("utf8"));
+  });
+});
 
 describe("buildInvocationEnvForLogs", () => {
   it("redacts inline secrets from resolved command metadata", () => {

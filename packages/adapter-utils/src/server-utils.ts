@@ -53,6 +53,38 @@ type ChildProcessWithEvents = ChildProcess & {
   ): ChildProcess;
 };
 
+const WINDOWS_LEGACY_STDIO_ENCODINGS = ["windows-949"] as const;
+
+function replacementCharCount(value: string): number {
+  return (value.match(/\uFFFD/g) ?? []).length;
+}
+
+export function decodeProcessOutputChunk(chunk: unknown): string {
+  if (!Buffer.isBuffer(chunk)) return String(chunk);
+
+  const utf8 = chunk.toString("utf8");
+  if (process.platform !== "win32" || replacementCharCount(utf8) === 0) {
+    return utf8;
+  }
+
+  let best = utf8;
+  let bestReplacementCount = replacementCharCount(utf8);
+  for (const encoding of WINDOWS_LEGACY_STDIO_ENCODINGS) {
+    try {
+      const decoded = new TextDecoder(encoding).decode(chunk);
+      const decodedReplacementCount = replacementCharCount(decoded);
+      if (decodedReplacementCount < bestReplacementCount) {
+        best = decoded;
+        bestReplacementCount = decodedReplacementCount;
+      }
+    } catch {
+      // Ignore encodings unavailable in the current Node/ICU build.
+    }
+  }
+
+  return best;
+}
+
 function resolveProcessGroupId(child: ChildProcess) {
   if (process.platform === "win32") return null;
   return typeof child.pid === "number" && child.pid > 0 ? child.pid : null;
@@ -2028,7 +2060,7 @@ export async function runChildProcess(
           const readable = child.stdout;
           if (!readable) return;
           readable.pause();
-          const text = String(chunk);
+          const text = decodeProcessOutputChunk(chunk);
           stdout = appendWithCap(stdout, text);
           maybeArmTerminalResultCleanup();
           logChain = logChain
@@ -2044,7 +2076,7 @@ export async function runChildProcess(
           const readable = child.stderr;
           if (!readable) return;
           readable.pause();
-          const text = String(chunk);
+          const text = decodeProcessOutputChunk(chunk);
           stderr = appendWithCap(stderr, text);
           maybeArmTerminalResultCleanup();
           logChain = logChain
