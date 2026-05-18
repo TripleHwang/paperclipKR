@@ -1,9 +1,124 @@
 {
   "app": {
+    "actions": {
+      "addAgent": "에이전트 추가",
+      "startOnboarding": "온보딩 시작"
+    },
+    "common": {
+      "company": "회사",
+      "loading": "불러오는 중..."
+    },
     "noCompanies": {
-      "title": "첫 회사를 만드세요",
-      "description": "회사를 만들어 시작하세요.",
+      "title": "첫 회사를 만들어 주세요",
+      "description": "회사를 만들고 시작하세요.",
       "newCompany": "새 회사"
+    },
+    "onboardingRoute": {
+      "addAgentTitle": "{{companyName}}에 에이전트 추가",
+      "addAgentDescription": "온보딩을 다시 실행해 이 회사에 에이전트와 시작 작업을 추가합니다.",
+      "createAnotherTitle": "다른 회사 만들기",
+      "createAnotherDescription": "온보딩을 다시 실행해 다른 회사를 만들고 첫 에이전트를 준비합니다.",
+      "createFirstTitle": "첫 회사를 만들어 주세요",
+      "createFirstDescription": "회사와 첫 에이전트를 만들고 시작하세요."
+    },
+    "sidebar": {
+      "account": {
+        "accountBadge": "계정",
+        "localBadge": "로컬",
+        "signedIn": "로그인됨",
+        "localWorkspaceBoard": "로컬 워크스페이스 보드",
+        "openAccountMenu": "계정 메뉴 열기",
+        "viewProfile": "프로필 보기",
+        "viewProfileDescription": "활동, 작업, 사용 내역을 엽니다.",
+        "editProfile": "프로필 편집",
+        "editProfileDescription": "표시 이름과 아바타를 수정합니다.",
+        "instanceSettings": "인스턴스 설정",
+        "instanceSettingsDescription": "마지막으로 열었던 설정 페이지로 이동합니다.",
+        "documentation": "문서",
+        "documentationDescription": "Paperclip 문서를 새 탭에서 엽니다.",
+        "switchToLight": "라이트 모드로 전환",
+        "switchToDark": "다크 모드로 전환",
+        "appearanceDescription": "앱 화면 모드를 전환합니다.",
+        "switchToKorean": "한국어로 전환",
+        "switchToEnglish": "영어로 전환",
+        "languageDescription": "인터페이스 언어를 변경합니다.",
+        "signingOut": "로그아웃 중...",
+        "signOut": "로그아웃",
+        "signOutDescription": "이 브라우저 세션을 종료합니다."
+      },
+      "agents": {
+        "label": "에이전트",
+        "new": "새 에이전트",
+        "actions": "에이전트 섹션 작업",
+        "browse": "에이전트 보기",
+        "sort": "에이전트 정렬",
+        "edit": "에이전트 편집",
+        "pause": "에이전트 일시정지",
+        "resume": "에이전트 재개",
+        "updating": "업데이트 중...",
+        "budgetPaused": "예산으로 일시정지됨",
+        "budgetPausedTitle": "예산 한도 때문에 에이전트가 일시정지되었습니다.",
+        "paused": "에이전트가 일시정지되었습니다",
+        "resumed": "에이전트가 재개되었습니다",
+        "couldNotPause": "에이전트를 일시정지할 수 없습니다",
+        "couldNotResume": "에이전트를 재개할 수 없습니다",
+        "openActions": "{{agentName}} 작업 열기"
+      },
+      "companySettings": {
+        "title": "회사 설정",
+        "general": "일반",
+        "environments": "환경",
+        "access": "접근 권한",
+        "invites": "초대",
+        "secrets": "시크릿"
+      },
+      "instanceSettings": {
+        "title": "인스턴스 설정",
+        "profile": "프로필",
+        "general": "일반",
+        "access": "접근 권한",
+        "heartbeats": "하트비트",
+        "experimental": "실험 기능",
+        "plugins": "플러그인",
+        "adapters": "어댑터"
+      },
+      "main": {
+        "openSearch": "검색 열기",
+        "newIssue": "새 이슈",
+        "dashboard": "대시보드",
+        "inbox": "받은함",
+        "work": "작업",
+        "issues": "이슈",
+        "routines": "루틴",
+        "goals": "목표",
+        "workspaces": "워크스페이스",
+        "company": "회사",
+        "org": "조직도",
+        "skills": "스킬",
+        "costs": "비용",
+        "activity": "활동",
+        "settings": "설정"
+      },
+      "mobile": {
+        "navigation": "모바일 내비게이션",
+        "home": "홈",
+        "issues": "이슈",
+        "create": "생성",
+        "agents": "에이전트",
+        "inbox": "받은함"
+      },
+      "projects": {
+        "label": "프로젝트",
+        "new": "새 프로젝트",
+        "actions": "프로젝트 섹션 작업",
+        "browse": "프로젝트 보기",
+        "sort": "프로젝트 정렬"
+      },
+      "sort": {
+        "top": "상단 고정",
+        "alphabetical": "가나다순",
+        "recent": "최근순"
+      }
     }
   }
 }

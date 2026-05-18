@@ -33,14 +33,9 @@ import {
   writeProjectSortMode,
 } from "../lib/project-order";
 import type { Project } from "@paperclipai/shared";
+import { useTranslation } from "@/i18n";
 
 type ProjectSidebarSlot = ReturnType<typeof usePluginSlots>["slots"][number];
-
-const PROJECT_SORT_CHOICES: SidebarSectionRadioChoice[] = [
-  { value: "top", label: "Top" },
-  { value: "alphabetical", label: "Alphabetical" },
-  { value: "recent", label: "Recent" },
-];
 
 type ProjectItemProps = {
   activeProjectRef: string | null;
@@ -167,7 +162,16 @@ export function SidebarProjects() {
   const { selectedCompany, selectedCompanyId } = useCompany();
   const { openNewProject } = useDialogActions();
   const { isMobile, setSidebarOpen } = useSidebar();
+  const { t } = useTranslation();
   const location = useLocation();
+  const projectSortChoices = useMemo<SidebarSectionRadioChoice[]>(
+    () => [
+      { value: "top", label: t("app.sidebar.sort.top") },
+      { value: "alphabetical", label: t("app.sidebar.sort.alphabetical") },
+      { value: "recent", label: t("app.sidebar.sort.recent") },
+    ],
+    [t],
+  );
 
   const { data: projects } = useQuery({
     queryKey: queryKeys.projects.list(selectedCompanyId!),
@@ -291,21 +295,21 @@ export function SidebarProjects() {
 
   return (
     <SidebarSection
-      label="Projects"
+      label={t("app.sidebar.projects.label")}
       collapsible={{ open, onOpenChange: setOpen }}
       headerAction={{
-        ariaLabel: "New project",
+        ariaLabel: t("app.sidebar.projects.new"),
         icon: Plus,
         onClick: openNewProject,
       }}
       menu={{
-        ariaLabel: "Projects section actions",
+        ariaLabel: t("app.sidebar.projects.actions"),
         actions: [
-          { type: "item", label: "Browse projects", icon: FolderOpen, href: "/projects" },
+          { type: "item", label: t("app.sidebar.projects.browse"), icon: FolderOpen, href: "/projects" },
           { type: "separator" },
         ],
-        radioLabel: "Project sort",
-        radioChoices: PROJECT_SORT_CHOICES,
+        radioLabel: t("app.sidebar.projects.sort"),
+        radioChoices: projectSortChoices,
         radioValue: sortMode,
         onRadioValueChange: persistSortMode,
       }}

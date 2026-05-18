@@ -3,6 +3,7 @@ import type { Resource } from "i18next";
 import { assertValidLocaleMessages } from "./locale-validation";
 
 export const DEFAULT_LOCALE = "en" as const;
+export const LOCALE_STORAGE_KEY = "paperclip.locale" as const;
 
 const localeModules = import.meta.glob("./locales/*.json", {
   eager: true,
@@ -33,6 +34,13 @@ for (const [locale, messages] of Object.entries(localeMessages)) {
 }
 
 export const supportedLocales = Object.keys(localeMessages);
+
+export function resolveSupportedLocale(locale: string | null | undefined): string | null {
+  if (!locale) return null;
+  if (locale in localeMessages) return locale;
+  const baseLocale = locale.split("-")[0];
+  return baseLocale && baseLocale in localeMessages ? baseLocale : null;
+}
 
 export const i18nextResources: Resource = Object.fromEntries(
   Object.entries(localeMessages).map(([locale, messages]) => [locale, { translation: messages }]),

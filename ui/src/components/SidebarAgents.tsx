@@ -40,12 +40,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import type { Agent } from "@paperclipai/shared";
-
-const AGENT_SORT_CHOICES: SidebarSectionRadioChoice[] = [
-  { value: "top", label: "Top" },
-  { value: "alphabetical", label: "Alphabetical" },
-  { value: "recent", label: "Recent" },
-];
+import { useTranslation } from "@/i18n";
 
 function agentTimestamp(agent: Agent, field: "lastHeartbeatAt" | "updatedAt" | "createdAt"): number {
   const raw = agent[field];
@@ -85,6 +80,7 @@ function SidebarAgentItem({
   onPauseResume,
   runCount,
   setSidebarOpen,
+  t,
 }: {
   activeAgentId: string | null;
   activeTab: string | null;
@@ -94,6 +90,7 @@ function SidebarAgentItem({
   onPauseResume: (agent: Agent, action: "pause" | "resume") => void;
   runCount: number;
   setSidebarOpen: (open: boolean) => void;
+  t: ReturnType<typeof useTranslation>["t"];
 }) {
   const routeRef = agentRouteRef(agent);
   const href = activeTab ? `${agentUrl(agent)}/${activeTab}` : agentUrl(agent);
@@ -101,12 +98,12 @@ function SidebarAgentItem({
   const isActive = activeAgentId === routeRef;
   const isPaused = agent.status === "paused";
   const isBudgetPaused = isPaused && agent.pauseReason === "budget";
-  const pauseResumeLabel = isPaused ? "Resume agent" : "Pause agent";
+  const pauseResumeLabel = isPaused ? t("app.sidebar.agents.resume") : t("app.sidebar.agents.pause");
   const pauseResumeDisabled = disabled || agent.status === "pending_approval" || isBudgetPaused;
   const pauseResumeDisabledLabel = disabled
-    ? "Updating..."
+    ? t("app.sidebar.agents.updating")
     : isBudgetPaused
-      ? "Budget paused"
+      ? t("app.sidebar.agents.budgetPaused")
       : pauseResumeLabel;
 
   return (
@@ -157,7 +154,7 @@ function SidebarAgentItem({
                 ? "opacity-100"
                 : "pointer-events-none opacity-0 group-hover/agent:pointer-events-auto group-hover/agent:opacity-100 group-focus-within/agent:pointer-events-auto group-focus-within/agent:opacity-100",
             )}
-            aria-label={`Open actions for ${agent.name}`}
+            aria-label={t("app.sidebar.agents.openActions", { agentName: agent.name })}
           >
             <MoreHorizontal className="h-3.5 w-3.5" />
           </Button>
@@ -171,7 +168,7 @@ function SidebarAgentItem({
               }}
             >
               <Pencil className="size-4" />
-              <span>Edit agent</span>
+              <span>{t("app.sidebar.agents.edit")}</span>
             </Link>
           </DropdownMenuItem>
           <DropdownMenuSeparator />
@@ -181,7 +178,7 @@ function SidebarAgentItem({
               onPauseResume(agent, isPaused ? "resume" : "pause");
             }}
             disabled={pauseResumeDisabled}
-            title={isBudgetPaused ? "Agent was paused by budget limits" : undefined}
+            title={isBudgetPaused ? t("app.sidebar.agents.budgetPausedTitle") : undefined}
           >
             {isPaused ? <PlayCircle className="size-4" /> : <PauseCircle className="size-4" />}
             <span>{pauseResumeDisabledLabel}</span>
@@ -200,7 +197,16 @@ export function SidebarAgents() {
   const { openNewAgent } = useDialogActions();
   const { isMobile, setSidebarOpen } = useSidebar();
   const { pushToast } = useToastActions();
+  const { t } = useTranslation();
   const location = useLocation();
+  const agentSortChoices = useMemo<SidebarSectionRadioChoice[]>(
+    () => [
+      { value: "top", label: t("app.sidebar.sort.top") },
+      { value: "alphabetical", label: t("app.sidebar.sort.alphabetical") },
+      { value: "recent", label: t("app.sidebar.sort.recent") },
+    ],
+    [t],
+  );
 
   const { data: agents } = useQuery({
     queryKey: queryKeys.agents.list(selectedCompanyId!),
@@ -322,14 +328,14 @@ export function SidebarAgents() {
         queryClient.invalidateQueries({ queryKey: queryKeys.agents.detail(agentRouteRef(agent)) }),
       ]);
       pushToast({
-        title: action === "pause" ? "Agent paused" : "Agent resumed",
+        title: action === "pause" ? t("app.sidebar.agents.paused") : t("app.sidebar.agents.resumed"),
         body: agent.name,
         tone: "success",
       });
     },
     onError: (error, { agent, action }) => {
       pushToast({
-        title: action === "pause" ? "Could not pause agent" : "Could not resume agent",
+        title: action === "pause" ? t("app.sidebar.agents.couldNotPause") : t("app.sidebar.agents.couldNotResume"),
         body: error instanceof Error ? error.message : agent.name,
         tone: "error",
       });
@@ -345,21 +351,21 @@ export function SidebarAgents() {
 
   return (
     <SidebarSection
-      label="Agents"
+      label={t("app.sidebar.agents.label")}
       collapsible={{ open, onOpenChange: setOpen }}
       headerAction={{
-        ariaLabel: "New agent",
+        ariaLabel: t("app.sidebar.agents.new"),
         icon: Plus,
         onClick: openNewAgent,
       }}
       menu={{
-        ariaLabel: "Agents section actions",
+        ariaLabel: t("app.sidebar.agents.actions"),
         actions: [
-          { type: "item", label: "Browse agents", icon: Users, href: "/agents/all" },
+          { type: "item", label: t("app.sidebar.agents.browse"), icon: Users, href: "/agents/all" },
           { type: "separator" },
         ],
-        radioLabel: "Agent sort",
-        radioChoices: AGENT_SORT_CHOICES,
+        radioLabel: t("app.sidebar.agents.sort"),
+        radioChoices: agentSortChoices,
         radioValue: sortMode,
         onRadioValueChange: persistSortMode,
       }}
@@ -377,6 +383,7 @@ export function SidebarAgents() {
             onPauseResume={(targetAgent, action) => pauseResumeAgent.mutate({ agent: targetAgent, action })}
             runCount={runCount}
             setSidebarOpen={setSidebarOpen}
+            t={t}
           />
         );
       })}
