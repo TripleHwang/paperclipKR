@@ -219,7 +219,10 @@ describe("server adapter registry", () => {
     await expect(listAdapterModelProfiles("opencode_local")).resolves.toEqual([
       expect.objectContaining({
         key: "cheap",
-        adapterConfig: expect.objectContaining({ model: "openai/gpt-5.1-codex-mini" }),
+        adapterConfig: expect.objectContaining({
+          model: "ollama-cloud/deepseek-v4-pro",
+          variant: "max",
+        }),
         source: "adapter_default",
       }),
     ]);
