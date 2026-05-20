@@ -23,7 +23,7 @@ Manual local CLI mode (outside heartbeat runs): use `paperclipai agent local-cli
 
 **Run audit trail:** You MUST include `-H 'X-Paperclip-Run-Id: $PAPERCLIP_RUN_ID'` on ALL API requests that modify issues (checkout, update, comment, create subtask, release). This links your actions to the current heartbeat run for traceability.
 
-**Unicode-safe writes:** If any issue title, description, comment, document, or hire instructions contain non-ASCII text (Korean, Chinese, Japanese, emoji, accented characters), do not pass inline JSON to `curl -d` or PowerShell native command arguments. On Windows that can silently turn text into `????`. Use a UTF-8 helper such as `node scripts/paperclip-issue-create.mjs` for new issues and `scripts/paperclip-issue-update.sh` for issue updates/comments, or build the JSON body from a UTF-8 file and send it with `--data-binary` plus `Content-Type: application/json; charset=utf-8`. In PowerShell, avoid piping Korean text to native commands; write UTF-8 files with `Set-Content -Encoding utf8` and pass `--description-file` or `--payload-file`.
+**Unicode-safe writes:** If any issue title, description, comment, document, or hire instructions contain non-ASCII text (Korean, Chinese, Japanese, emoji, accented characters), do not pass that text as inline JSON, `curl -d` data, or native command arguments such as `--title "..."`. On Windows that can silently turn text into `????` before Paperclip receives it. Prefer structured MCP tools when available. Otherwise use a UTF-8 file/STDIN helper such as `node scripts/paperclip-issue-create.mjs --payload-file ...` for new issues and `scripts/paperclip-issue-update.sh` with heredoc/file input for updates/comments, or build the JSON body from a UTF-8 file and send it with `--data-binary` plus `Content-Type: application/json; charset=utf-8`. If your current workspace is not the Paperclip repo root, run the issue-create helper from this skill directory's `scripts/` folder.
 
 ## The Heartbeat Procedure
 
@@ -140,29 +140,37 @@ Status values: `backlog`, `todo`, `in_progress`, `in_review`, `done`, `blocked`,
 
 **Step 9 — Delegate if needed.** Create subtasks with `POST /api/companies/{companyId}/issues`. Always set `parentId` and `goalId`. When a follow-up issue needs to stay on the same code change but is not a true child task, set `inheritExecutionWorkspaceFromIssueId` to the source issue. Set `billingCode` for cross-team work.
 
-For non-ASCII titles or descriptions, prefer the UTF-8 helper instead of inline `curl -d`:
+For non-ASCII titles or descriptions, prefer `paperclipCreateIssue` if an MCP tool is available. Otherwise write the whole payload as UTF-8 first, then pass the file path to the helper. Do not pass the title itself as a command argument on Windows:
 
 ```bash
+cat > .paperclip-issue-payload.json <<'JSON'
+{
+  "title": "한국어 하위 작업",
+  "description": "한국어 설명을 그대로 보존해야 합니다.",
+  "parentId": "replace-with-parent-issue-id",
+  "goalId": "replace-with-goal-id",
+  "assigneeAgentId": "replace-with-agent-id"
+}
+JSON
+
 node scripts/paperclip-issue-create.mjs \
-  --title "한국어 하위 작업" \
-  --parent-id "$PAPERCLIP_TASK_ID" \
-  --goal-id "<goal-id>" \
-  --assignee-agent-id "<agent-id>" \
-  --description "한국어 설명을 그대로 보존해야 합니다."
+  --payload-file .paperclip-issue-payload.json
 ```
 
-In Windows PowerShell, write longer text to a UTF-8 file first:
+In Windows PowerShell, create the JSON as a UTF-8 file and use `--payload-file`:
 
 ```powershell
-Set-Content -Path .paperclip-issue-description.md -Encoding utf8 -Value @"
-한국어 설명을 그대로 보존해야 합니다.
+Set-Content -Path .paperclip-issue-payload.json -Encoding utf8 -Value @"
+{
+  "title": "한국어 하위 작업",
+  "description": "한국어 설명을 그대로 보존해야 합니다.",
+  "parentId": "$env:PAPERCLIP_TASK_ID",
+  "goalId": "replace-with-goal-id",
+  "assigneeAgentId": "replace-with-agent-id"
+}
 "@
 node scripts/paperclip-issue-create.mjs `
-  --title "한국어 하위 작업" `
-  --parent-id "$env:PAPERCLIP_TASK_ID" `
-  --goal-id "<goal-id>" `
-  --assignee-agent-id "<agent-id>" `
-  --description-file .paperclip-issue-description.md
+  --payload-file .paperclip-issue-payload.json
 ```
 
 ## Issue Dependencies (Blockers)
