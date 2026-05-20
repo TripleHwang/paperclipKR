@@ -95,26 +95,30 @@ Before submitting, walk the draft-review checklist end-to-end and fix any item t
 
 ### 8. Submit hire request
 
-If the hire payload contains non-ASCII text (Korean, Chinese, Japanese, emoji, accented characters), do not pass inline JSON to `curl -d` or PowerShell native command arguments. On Windows that can silently turn text into `????`. Build the JSON from a UTF-8 file and send it with `--data-binary` plus `Content-Type: application/json; charset=utf-8`. In PowerShell, write the file with `Set-Content -Encoding utf8`.
+If the hire payload contains non-ASCII text (Korean, Chinese, Japanese, emoji, accented characters), do not pass that text as inline JSON, `curl -d` data, or native command arguments. On Windows that can silently turn text into `????` before Paperclip receives it. Build the JSON from a UTF-8 file and send it with `--data-binary @file` plus `Content-Type: application/json; charset=utf-8`.
 
 ```sh
+cat > .paperclip-hire-payload.json <<'JSON'
+{
+  "name": "CTO",
+  "role": "cto",
+  "title": "Chief Technology Officer",
+  "icon": "crown",
+  "reportsTo": "<ceo-agent-id>",
+  "capabilities": "Owns technical roadmap, architecture, staffing, execution",
+  "desiredSkills": ["vercel-labs/agent-browser/agent-browser"],
+  "adapterType": "codex_local",
+  "adapterConfig": {"cwd": "/abs/path/to/repo", "model": "o4-mini"},
+  "instructionsBundle": {"files": {"AGENTS.md": "You are the CTO..."}},
+  "runtimeConfig": {"heartbeat": {"enabled": false, "wakeOnDemand": true}},
+  "sourceIssueId": "<issue-id>"
+}
+JSON
+
 curl -sS -X POST "$PAPERCLIP_API_URL/api/companies/$PAPERCLIP_COMPANY_ID/agent-hires" \
   -H "Authorization: Bearer $PAPERCLIP_API_KEY" \
   -H "Content-Type: application/json; charset=utf-8" \
-  --data-binary '{
-    "name": "CTO",
-    "role": "cto",
-    "title": "Chief Technology Officer",
-    "icon": "crown",
-    "reportsTo": "<ceo-agent-id>",
-    "capabilities": "Owns technical roadmap, architecture, staffing, execution",
-    "desiredSkills": ["vercel-labs/agent-browser/agent-browser"],
-    "adapterType": "codex_local",
-    "adapterConfig": {"cwd": "/abs/path/to/repo", "model": "o4-mini"},
-    "instructionsBundle": {"files": {"AGENTS.md": "You are the CTO..."}},
-    "runtimeConfig": {"heartbeat": {"enabled": false, "wakeOnDemand": true}},
-    "sourceIssueId": "<issue-id>"
-  }'
+  --data-binary @.paperclip-hire-payload.json
 ```
 
 ### 9. Handle governance state
