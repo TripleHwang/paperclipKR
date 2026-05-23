@@ -30,6 +30,15 @@ try {
 }
 
 const relativeSdkDir = relative(scopeDir, sdkDir);
-symlinkSync(relativeSdkDir, linkTarget, "dir");
+try {
+  symlinkSync(relativeSdkDir, linkTarget, "dir");
+} catch (error) {
+  if (process.platform !== "win32" || error?.code !== "EPERM") {
+    throw error;
+  }
+
+  // Windows often blocks directory symlinks outside Developer Mode; junctions do not need that privilege.
+  symlinkSync(sdkDir, linkTarget, "junction");
+}
 
 console.log(`  ✓ Linked local @paperclipai/plugin-sdk for ${packageDir}`);
