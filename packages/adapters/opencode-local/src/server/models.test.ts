@@ -1,14 +1,17 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   ensureOpenCodeModelConfiguredAndAvailable,
   listOpenCodeModels,
   requireOpenCodeModelId,
+  refreshOpenCodeModels,
   resetOpenCodeModelsCacheForTests,
+  setOpenCodeModelsDiscoveryForTests,
 } from "./models.js";
 
 describe("openCode models", () => {
   afterEach(() => {
     delete process.env.PAPERCLIP_OPENCODE_COMMAND;
+    setOpenCodeModelsDiscoveryForTests(null);
     resetOpenCodeModelsCacheForTests();
   });
 
@@ -43,5 +46,44 @@ describe("openCode models", () => {
         model: "openai/gpt-5",
       }),
     ).rejects.toThrow("Failed to start command");
+  });
+
+  it("refreshes the cached model catalog on demand", async () => {
+    const discovery = vi.fn()
+      .mockResolvedValueOnce([{ id: "openai/old", label: "openai/old" }])
+      .mockResolvedValueOnce([{ id: "openai/new", label: "openai/new" }]);
+    setOpenCodeModelsDiscoveryForTests(discovery);
+
+    const initial = await listOpenCodeModels();
+    const cached = await listOpenCodeModels();
+    const refreshed = await refreshOpenCodeModels();
+
+    expect(discovery).toHaveBeenCalledTimes(2);
+    expect(initial).toEqual([{ id: "openai/old", label: "openai/old" }]);
+    expect(cached).toEqual([{ id: "openai/old", label: "openai/old" }]);
+    expect(refreshed).toEqual([{ id: "openai/new", label: "openai/new" }]);
+  });
+
+  it("does not let an in-flight discovery overwrite a refreshed catalog", async () => {
+    const oldModels = [{ id: "openai/old", label: "openai/old" }];
+    const newModels = [{ id: "openai/new", label: "openai/new" }];
+    let resolveOld!: (models: typeof oldModels) => void;
+    const oldDiscovery = new Promise<typeof oldModels>((resolve) => {
+      resolveOld = resolve;
+    });
+    const discovery = vi.fn()
+      .mockImplementationOnce(() => oldDiscovery)
+      .mockResolvedValueOnce(newModels);
+    setOpenCodeModelsDiscoveryForTests(discovery);
+
+    const oldList = listOpenCodeModels();
+    const refreshed = await refreshOpenCodeModels();
+    resolveOld(oldModels);
+    await oldList;
+    const cached = await listOpenCodeModels();
+
+    expect(refreshed).toEqual(newModels);
+    expect(cached).toEqual(newModels);
+    expect(discovery).toHaveBeenCalledTimes(2);
   });
 });

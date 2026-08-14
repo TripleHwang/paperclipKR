@@ -66,6 +66,7 @@ export { testEnvironment } from "./test.js";
 export {
   listOpenCodeModels,
   discoverOpenCodeModels,
+  refreshOpenCodeModels,
   ensureOpenCodeModelConfiguredAndAvailable,
   requireOpenCodeModelId,
   resetOpenCodeModelsCacheForTests,

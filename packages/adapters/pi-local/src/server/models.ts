@@ -73,6 +73,7 @@ function resolvePiCommand(input: unknown): string {
 }
 
 const discoveryCache = new Map<string, { expiresAt: number; models: AdapterModel[] }>();
+let discoveryCacheGeneration = 0;
 const VOLATILE_ENV_KEY_PREFIXES = ["PAPERCLIP_", "npm_", "NPM_"] as const;
 const VOLATILE_ENV_KEY_EXACT = new Set(["PWD", "OLDPWD", "SHLVL", "_", "TERM_SESSION_ID"]);
 
@@ -136,6 +137,8 @@ export async function discoverPiModels(input: {
   return sortModels(dedupeModels(parseModelsOutput(output)));
 }
 
+let piModelsDiscovery: typeof discoverPiModels = discoverPiModels;
+
 function normalizeEnv(input: unknown): Record<string, string> {
   const envInput = typeof input === "object" && input !== null && !Array.isArray(input)
     ? (input as Record<string, unknown>)
@@ -161,8 +164,11 @@ export async function discoverPiModelsCached(input: {
   const cached = discoveryCache.get(key);
   if (cached && cached.expiresAt > now) return cached.models;
 
-  const models = await discoverPiModels({ command, cwd, env });
-  discoveryCache.set(key, { expiresAt: now + MODELS_CACHE_TTL_MS, models });
+  const generation = discoveryCacheGeneration;
+  const models = await piModelsDiscovery({ command, cwd, env });
+  if (discoveryCacheGeneration === generation) {
+    discoveryCache.set(key, { expiresAt: now + MODELS_CACHE_TTL_MS, models });
+  }
   return models;
 }
 
@@ -205,6 +211,22 @@ export async function listPiModels(): Promise<AdapterModel[]> {
   }
 }
 
-export function resetPiModelsCacheForTests() {
+function clearPiModelsCache() {
+  discoveryCacheGeneration += 1;
   discoveryCache.clear();
+}
+
+export async function refreshPiModels(): Promise<AdapterModel[]> {
+  clearPiModelsCache();
+  return listPiModels();
+}
+
+export function resetPiModelsCacheForTests() {
+  clearPiModelsCache();
+}
+
+export function setPiModelsDiscoveryForTests(
+  discovery: typeof discoverPiModels | null,
+) {
+  piModelsDiscovery = discovery ?? discoverPiModels;
 }

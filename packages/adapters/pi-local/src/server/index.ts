@@ -55,6 +55,7 @@ export {
   listPiModels,
   discoverPiModels,
   discoverPiModelsCached,
+  refreshPiModels,
   ensurePiModelConfiguredAndAvailable,
   resetPiModelsCacheForTests,
 } from "./models.js";

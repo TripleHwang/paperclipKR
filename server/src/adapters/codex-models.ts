@@ -1,3 +1,7 @@
+import { createHash } from "node:crypto";
+import { existsSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import path from "node:path";
 import type { AdapterModel } from "./types.js";
 import { models as codexFallbackModels } from "@paperclipai/adapter-codex-local";
 import { readConfigFile } from "../config-file.js";
@@ -5,12 +9,37 @@ import { readConfigFile } from "../config-file.js";
 const OPENAI_MODELS_ENDPOINT = "https://api.openai.com/v1/models";
 const OPENAI_MODELS_TIMEOUT_MS = 5000;
 const OPENAI_MODELS_CACHE_TTL_MS = 60_000;
+const CODEX_MODELS_TIMEOUT_MS = 10_000;
+const CODEX_MODELS_MAX_BUFFER_BYTES = 2 * 1024 * 1024;
+const SAFE_MODEL_ID = /^[A-Za-z0-9][A-Za-z0-9._:/-]*$/;
 
-let cached: { keyFingerprint: string; expiresAt: number; models: AdapterModel[] } | null = null;
+type CodexModelsCommandResult = {
+  status: number | null;
+  stdout: string;
+  stderr: string;
+  hasError: boolean;
+};
 
-function fingerprint(apiKey: string): string {
-  return `${apiKey.length}:${apiKey.slice(-6)}`;
-}
+type CodexModelsSpawnResult = {
+  status: number | null;
+  stdout: string | null | undefined;
+  stderr: string | null | undefined;
+  error?: Error;
+};
+
+type CodexModelsSpawn = (
+  command: string,
+  args: string[],
+  options: { encoding: "utf8"; timeout: number; maxBuffer: number; windowsHide: true },
+) => CodexModelsSpawnResult;
+
+type ModelCatalogResult = {
+  success: boolean;
+  models: AdapterModel[];
+};
+
+let cached: { identity: string; expiresAt: number; models: AdapterModel[] } | null = null;
+let discoveryGeneration = 0;
 
 function dedupeModels(models: AdapterModel[]): AdapterModel[] {
   const seen = new Set<string>();
@@ -25,10 +54,8 @@ function dedupeModels(models: AdapterModel[]): AdapterModel[] {
 }
 
 function mergedWithFallback(models: AdapterModel[]): AdapterModel[] {
-  return dedupeModels([
-    ...models,
-    ...codexFallbackModels,
-  ]).sort((a, b) => a.id.localeCompare(b.id, "en", { numeric: true, sensitivity: "base" }));
+  return dedupeModels([...models, ...codexFallbackModels])
+    .sort((a, b) => a.id.localeCompare(b.id, "en", { numeric: true, sensitivity: "base" }));
 }
 
 function resolveOpenAiApiKey(): string | null {
@@ -41,20 +68,136 @@ function resolveOpenAiApiKey(): string | null {
   return configKey && configKey.length > 0 ? configKey : null;
 }
 
-async function fetchOpenAiModels(apiKey: string): Promise<AdapterModel[]> {
+function cacheIdentity(command: string, apiKey: string | null): string {
+  const keyPart = apiKey ? createHash("sha256").update(apiKey).digest("hex") : "no-api-key";
+  return `${command}:${keyPart}`;
+}
+
+function parseCodexModelsCatalog(stdout: string): ModelCatalogResult {
+  try {
+    const payload = JSON.parse(stdout) as unknown;
+    if (typeof payload !== "object" || payload === null || Array.isArray(payload)) return { success: false, models: [] };
+    const entries = (payload as { models?: unknown }).models;
+    if (!Array.isArray(entries)) return { success: false, models: [] };
+
+    const models: AdapterModel[] = [];
+    for (const entry of entries) {
+      if (typeof entry !== "object" || entry === null || Array.isArray(entry)) continue;
+      const { slug, display_name: displayName, visibility } = entry as {
+        slug?: unknown;
+        display_name?: unknown;
+        visibility?: unknown;
+      };
+      if (visibility !== undefined && visibility !== "list") continue;
+      if (typeof slug !== "string") continue;
+      const id = slug.trim();
+      if (id !== slug) continue;
+      if (!SAFE_MODEL_ID.test(id)) continue;
+      const label = typeof displayName === "string" && displayName.trim() ? displayName.trim() : id;
+      models.push({ id, label });
+    }
+    return { success: true, models: dedupeModels(models) };
+  } catch {
+    return { success: false, models: [] };
+  }
+}
+
+export function parseCodexModelsOutput(stdout: string): AdapterModel[] {
+  return parseCodexModelsCatalog(stdout).models;
+}
+
+function resolveCodexCommand(command: string): string {
+  if (command.includes("/") || command.includes("\\")) {
+    return path.isAbsolute(command) ? command : path.resolve(command);
+  }
+  const pathValue = process.env.PATH ?? process.env.Path ?? "";
+  const delimiter = process.platform === "win32" ? ";" : ":";
+  const extensions = process.platform === "win32"
+    ? (process.env.PATHEXT ?? ".EXE;.CMD;.BAT;.COM").split(";").filter(Boolean)
+    : [""];
+  const hasExtension = process.platform === "win32" && path.extname(command).length > 0;
+  for (const dir of pathValue.split(delimiter).filter(Boolean)) {
+    for (const extension of hasExtension ? [""] : extensions) {
+      const candidate = path.join(dir, `${command}${extension}`);
+      if (existsSync(candidate)) return candidate;
+    }
+  }
+  return command;
+}
+
+function hasUnsafeCmdValue(value: string): boolean {
+  return /["\r\n\0%!^&|<>()]/.test(value);
+}
+
+function quoteForCmd(value: string): string {
+  return `"${value}"`;
+}
+
+function defaultCodexModelsSpawn(
+  command: string,
+  args: string[],
+  options: { encoding: "utf8"; timeout: number; maxBuffer: number; windowsHide: true },
+): CodexModelsSpawnResult {
+  return spawnSync(command, args, options);
+}
+
+let codexModelsSpawn: CodexModelsSpawn = defaultCodexModelsSpawn;
+
+function defaultCodexModelsRunner(): CodexModelsCommandResult {
+  const command = process.env.PAPERCLIP_CODEX_COMMAND?.trim() || "codex";
+  if (hasUnsafeCmdValue(command)) {
+    return { status: null, stdout: "", stderr: "", hasError: true };
+  }
+  const executable = resolveCodexCommand(command);
+  const isWindowsWrapper = process.platform === "win32" && /\.(cmd|bat)$/i.test(executable);
+  if (isWindowsWrapper && (!path.isAbsolute(executable) || !existsSync(executable) || hasUnsafeCmdValue(executable))) {
+    return { status: null, stdout: "", stderr: "", hasError: true };
+  }
+  const result = isWindowsWrapper
+    ? codexModelsSpawn(path.join(process.env.SystemRoot || "C:\\Windows", "System32", "cmd.exe"), [
+      "/d", "/s", "/c", `${quoteForCmd(executable)} debug models`,
+    ], {
+      encoding: "utf8",
+      timeout: CODEX_MODELS_TIMEOUT_MS,
+      maxBuffer: CODEX_MODELS_MAX_BUFFER_BYTES,
+      windowsHide: true,
+    })
+    : codexModelsSpawn(executable, ["debug", "models"], {
+      encoding: "utf8",
+      timeout: CODEX_MODELS_TIMEOUT_MS,
+      maxBuffer: CODEX_MODELS_MAX_BUFFER_BYTES,
+      windowsHide: true,
+    });
+  return {
+    status: result.status,
+    stdout: typeof result.stdout === "string" ? result.stdout : "",
+    stderr: typeof result.stderr === "string" ? result.stderr : "",
+    hasError: Boolean(result.error),
+  };
+}
+
+let codexModelsRunner: () => CodexModelsCommandResult = defaultCodexModelsRunner;
+
+function fetchCodexModelsFromCli(): ModelCatalogResult {
+  const result = codexModelsRunner();
+  if (result.status !== 0 || result.hasError) return { success: false, models: [] };
+  return parseCodexModelsCatalog(result.stdout);
+}
+
+async function fetchOpenAiModels(apiKey: string): Promise<ModelCatalogResult> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), OPENAI_MODELS_TIMEOUT_MS);
   try {
     const response = await fetch(OPENAI_MODELS_ENDPOINT, {
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-      },
+      headers: { Authorization: `Bearer ${apiKey}` },
       signal: controller.signal,
     });
-    if (!response.ok) return [];
+    if (!response.ok) return { success: false, models: [] };
 
-    const payload = (await response.json()) as { data?: unknown };
-    const data = Array.isArray(payload.data) ? payload.data : [];
+    const payload = (await response.json()) as unknown;
+    if (typeof payload !== "object" || payload === null || Array.isArray(payload)) return { success: false, models: [] };
+    const data = (payload as { data?: unknown }).data;
+    if (!Array.isArray(data)) return { success: false, models: [] };
     const models: AdapterModel[] = [];
     for (const item of data) {
       if (typeof item !== "object" || item === null) continue;
@@ -62,9 +205,9 @@ async function fetchOpenAiModels(apiKey: string): Promise<AdapterModel[]> {
       if (typeof id !== "string" || id.trim().length === 0) continue;
       models.push({ id, label: id });
     }
-    return dedupeModels(models);
+    return { success: true, models: dedupeModels(models) };
   } catch {
-    return [];
+    return { success: false, models: [] };
   } finally {
     clearTimeout(timeout);
   }
@@ -73,31 +216,24 @@ async function fetchOpenAiModels(apiKey: string): Promise<AdapterModel[]> {
 async function loadCodexModels(options?: { forceRefresh?: boolean }): Promise<AdapterModel[]> {
   const forceRefresh = options?.forceRefresh === true;
   const apiKey = resolveOpenAiApiKey();
-  const fallback = dedupeModels(codexFallbackModels);
-  if (!apiKey) return fallback;
-
+  const command = process.env.PAPERCLIP_CODEX_COMMAND?.trim() || "codex";
+  const identity = cacheIdentity(command, apiKey);
   const now = Date.now();
-  const keyFingerprint = fingerprint(apiKey);
-  if (!forceRefresh && cached && cached.keyFingerprint === keyFingerprint && cached.expiresAt > now) {
-    return cached.models;
+  if (!forceRefresh && cached?.identity === identity && cached.expiresAt > now) return cached.models;
+  const generation = ++discoveryGeneration;
+
+  const cliCatalog = fetchCodexModelsFromCli();
+  const apiCatalog = apiKey ? await fetchOpenAiModels(apiKey) : { success: false, models: [] };
+  if (cliCatalog.success || apiCatalog.success) {
+    const models = mergedWithFallback([...cliCatalog.models, ...apiCatalog.models]);
+    if (generation === discoveryGeneration) {
+      cached = { identity, expiresAt: now + OPENAI_MODELS_CACHE_TTL_MS, models };
+    }
+    return models;
   }
 
-  const fetched = await fetchOpenAiModels(apiKey);
-  if (fetched.length > 0) {
-    const merged = mergedWithFallback(fetched);
-    cached = {
-      keyFingerprint,
-      expiresAt: now + OPENAI_MODELS_CACHE_TTL_MS,
-      models: merged,
-    };
-    return merged;
-  }
-
-  if (cached && cached.keyFingerprint === keyFingerprint && cached.models.length > 0) {
-    return cached.models;
-  }
-
-  return fallback;
+  if (cached?.identity === identity && cached.models.length > 0) return cached.models;
+  return dedupeModels(codexFallbackModels);
 }
 
 export async function listCodexModels(): Promise<AdapterModel[]> {
@@ -110,4 +246,13 @@ export async function refreshCodexModels(): Promise<AdapterModel[]> {
 
 export function resetCodexModelsCacheForTests() {
   cached = null;
+  discoveryGeneration = 0;
+}
+
+export function setCodexModelsRunnerForTests(runner: (() => CodexModelsCommandResult) | null) {
+  codexModelsRunner = runner ?? defaultCodexModelsRunner;
+}
+
+export function setCodexModelsSpawnForTests(spawn: CodexModelsSpawn | null) {
+  codexModelsSpawn = spawn ?? defaultCodexModelsSpawn;
 }

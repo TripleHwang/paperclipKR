@@ -21,6 +21,7 @@ function resolveOpenCodeCommand(input: unknown): string {
 }
 
 const discoveryCache = new Map<string, { expiresAt: number; models: AdapterModel[] }>();
+let discoveryCacheGeneration = 0;
 const VOLATILE_ENV_KEY_PREFIXES = ["PAPERCLIP_", "npm_", "NPM_"] as const;
 const VOLATILE_ENV_KEY_EXACT = new Set(["PWD", "OLDPWD", "SHLVL", "_", "TERM_SESSION_ID", "HOME"]);
 
@@ -156,6 +157,8 @@ export async function discoverOpenCodeModels(input: {
   return sortModels(parseOpenCodeModelsOutput(result.stdout));
 }
 
+let openCodeModelsDiscovery: typeof discoverOpenCodeModels = discoverOpenCodeModels;
+
 export async function discoverOpenCodeModelsCached(input: {
   command?: unknown;
   cwd?: unknown;
@@ -170,8 +173,11 @@ export async function discoverOpenCodeModelsCached(input: {
   const cached = discoveryCache.get(key);
   if (cached && cached.expiresAt > now) return cached.models;
 
-  const models = await discoverOpenCodeModels({ command, cwd, env });
-  discoveryCache.set(key, { expiresAt: now + MODELS_CACHE_TTL_MS, models });
+  const generation = discoveryCacheGeneration;
+  const models = await openCodeModelsDiscovery({ command, cwd, env });
+  if (discoveryCacheGeneration === generation) {
+    discoveryCache.set(key, { expiresAt: now + MODELS_CACHE_TTL_MS, models });
+  }
   return models;
 }
 
@@ -211,6 +217,22 @@ export async function listOpenCodeModels(): Promise<AdapterModel[]> {
   }
 }
 
-export function resetOpenCodeModelsCacheForTests() {
+function clearOpenCodeModelsCache() {
+  discoveryCacheGeneration += 1;
   discoveryCache.clear();
+}
+
+export async function refreshOpenCodeModels(): Promise<AdapterModel[]> {
+  clearOpenCodeModelsCache();
+  return listOpenCodeModels();
+}
+
+export function resetOpenCodeModelsCacheForTests() {
+  clearOpenCodeModelsCache();
+}
+
+export function setOpenCodeModelsDiscoveryForTests(
+  discovery: typeof discoverOpenCodeModels | null,
+) {
+  openCodeModelsDiscovery = discovery ?? discoverOpenCodeModels;
 }

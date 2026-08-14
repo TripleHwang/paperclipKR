@@ -1,10 +1,18 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { models as codexFallbackModels } from "@paperclipai/adapter-codex-local";
 import { models as cursorFallbackModels } from "@paperclipai/adapter-cursor-local";
 import { models as opencodeFallbackModels } from "@paperclipai/adapter-opencode-local";
 import { resetOpenCodeModelsCacheForTests } from "@paperclipai/adapter-opencode-local/server";
 import { listAdapterModels, listServerAdapters, refreshAdapterModels } from "../adapters/index.js";
-import { resetCodexModelsCacheForTests } from "../adapters/codex-models.js";
+import {
+  parseCodexModelsOutput,
+  resetCodexModelsCacheForTests,
+  setCodexModelsSpawnForTests,
+  setCodexModelsRunnerForTests,
+} from "../adapters/codex-models.js";
 import { resetCursorModelsCacheForTests, setCursorModelsRunnerForTests } from "../adapters/cursor-models.js";
 
 vi.mock("acpx/runtime", () => ({
@@ -17,8 +25,16 @@ vi.mock("acpx/runtime", () => ({
 describe("adapter model listing", () => {
   beforeEach(() => {
     delete process.env.OPENAI_API_KEY;
+    delete process.env.PAPERCLIP_CODEX_COMMAND;
     delete process.env.PAPERCLIP_OPENCODE_COMMAND;
     resetCodexModelsCacheForTests();
+    setCodexModelsSpawnForTests(null);
+    setCodexModelsRunnerForTests(() => ({
+      status: null,
+      stdout: "",
+      stderr: "",
+      hasError: true,
+    }));
     resetCursorModelsCacheForTests();
     setCursorModelsRunnerForTests(null);
     resetOpenCodeModelsCacheForTests();
@@ -42,8 +58,192 @@ describe("adapter model listing", () => {
     const models = await listAdapterModels("codex_local");
 
     expect(models).toEqual(codexFallbackModels);
+    expect(models.slice(0, 5)).toEqual([
+      { id: "gpt-5.6", label: "gpt-5.6" },
+      { id: "gpt-5.6-sol", label: "gpt-5.6-sol" },
+      { id: "gpt-5.6-terra", label: "gpt-5.6-terra" },
+      { id: "gpt-5.6-luna", label: "gpt-5.6-luna" },
+      { id: "gpt-5.5", label: "gpt-5.5" },
+    ]);
+    for (const modelId of ["gpt-5.6", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"]) {
+      expect(models.some((model) => model.id === modelId)).toBe(true);
+    }
     expect(models.some((model) => model.id === "gpt-5.5")).toBe(true);
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("parses visible Codex CLI models with display-name fallback and deduplication", () => {
+    const models = parseCodexModelsOutput(JSON.stringify({
+      models: [
+        { slug: "gpt-5.6", display_name: " GPT 5.6 ", visibility: "list" },
+        { slug: "gpt-5.5", display_name: "   " },
+        { slug: "gpt-5.6", display_name: "Ignored duplicate", visibility: "list" },
+      ],
+    }));
+
+    expect(models).toEqual([
+      { id: "gpt-5.6", label: "GPT 5.6" },
+      { id: "gpt-5.5", label: "gpt-5.5" },
+    ]);
+  });
+
+  it("rejects hidden, malformed, and unsafe Codex CLI model entries", () => {
+    expect(parseCodexModelsOutput(JSON.stringify({
+      models: [
+        { slug: "gpt-5.6", visibility: "hidden" },
+        { slug: "gpt 5.6", visibility: "list" },
+        { slug: "gpt-5.6;whoami", visibility: "list" },
+        { slug: 42, visibility: "list" },
+        { slug: "gpt-5.5", visibility: "list" },
+      ],
+    }))).toEqual([{ id: "gpt-5.5", label: "gpt-5.5" }]);
+  });
+
+  it("returns no Codex CLI models for malformed JSON or non-model payloads", () => {
+    expect(parseCodexModelsOutput("not json")).toEqual([]);
+    expect(parseCodexModelsOutput(JSON.stringify({ data: [] }))).toEqual([]);
+    expect(parseCodexModelsOutput(JSON.stringify({ models: {} }))).toEqual([]);
+  });
+
+  it("discovers Codex CLI models without an API key and merges fallbacks", async () => {
+    setCodexModelsRunnerForTests(() => ({
+      status: 0,
+      stdout: JSON.stringify({ models: [{ slug: "gpt-5.7-preview", display_name: "GPT 5.7 Preview", visibility: "list" }] }),
+      stderr: "",
+      hasError: false,
+    }));
+
+    const models = await listAdapterModels("codex_local");
+
+    expect(models.some((model) => model.id === "gpt-5.7-preview" && model.label === "GPT 5.7 Preview")).toBe(true);
+    expect(models.some((model) => model.id === "gpt-5.6")).toBe(true);
+  });
+
+  it("runs native Codex discovery with fixed args and bounded hidden output", async () => {
+    const spawn = vi.fn(() => ({
+      status: 0,
+      stdout: JSON.stringify({ models: [] }),
+      stderr: "",
+      error: undefined,
+    }));
+    process.env.PAPERCLIP_CODEX_COMMAND = process.execPath;
+    setCodexModelsRunnerForTests(null);
+    setCodexModelsSpawnForTests(spawn);
+
+    await listAdapterModels("codex_local");
+
+    expect(spawn).toHaveBeenCalledWith(process.execPath, ["debug", "models"], {
+      encoding: "utf8",
+      timeout: 10_000,
+      maxBuffer: 2 * 1024 * 1024,
+      windowsHide: true,
+    });
+  });
+
+  it("uses cmd.exe only for a resolved Windows command wrapper", async () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-codex-models-"));
+    const wrapper = path.join(tempDir, "codex.cmd");
+    fs.writeFileSync(wrapper, "@echo off\r\n");
+    const spawn = vi.fn(() => ({ status: 0, stdout: JSON.stringify({ models: [] }), stderr: "", error: undefined }));
+    process.env.PAPERCLIP_CODEX_COMMAND = wrapper;
+    setCodexModelsRunnerForTests(null);
+    setCodexModelsSpawnForTests(spawn);
+
+    try {
+      await listAdapterModels("codex_local");
+      expect(spawn).toHaveBeenCalledWith(
+        path.join(process.env.SystemRoot || "C:\\Windows", "System32", "cmd.exe"),
+        ["/d", "/s", "/c", `"${wrapper}" debug models`],
+        expect.objectContaining({ windowsHide: true }),
+      );
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("does not spawn an injection-shaped Codex command override", async () => {
+    const spawn = vi.fn(() => ({ status: 0, stdout: JSON.stringify({ models: [] }), stderr: "", error: undefined }));
+    process.env.PAPERCLIP_CODEX_COMMAND = 'C:\\tools\\codex.cmd" & whoami';
+    setCodexModelsRunnerForTests(null);
+    setCodexModelsSpawnForTests(spawn);
+
+    const models = await listAdapterModels("codex_local");
+
+    expect(spawn).not.toHaveBeenCalled();
+    expect(models).toEqual(codexFallbackModels);
+  });
+
+  it("caches Codex CLI model discovery on normal calls", async () => {
+    const runner = vi.fn(() => ({
+      status: 0,
+      stdout: JSON.stringify({ models: [{ slug: "gpt-5.7-preview", visibility: "list" }] }),
+      stderr: "",
+      hasError: false,
+    }));
+    setCodexModelsRunnerForTests(runner);
+
+    await listAdapterModels("codex_local");
+    await listAdapterModels("codex_local");
+
+    expect(runner).toHaveBeenCalledTimes(1);
+  });
+
+  it("caches fallbacks after a valid empty Codex CLI catalog", async () => {
+    const runner = vi.fn(() => ({
+      status: 0,
+      stdout: JSON.stringify({ models: [] }),
+      stderr: "",
+      hasError: false,
+    }));
+    setCodexModelsRunnerForTests(runner);
+
+    const first = await listAdapterModels("codex_local");
+    const second = await listAdapterModels("codex_local");
+
+    expect(runner).toHaveBeenCalledTimes(1);
+    expect(first).toEqual(second);
+    expect(first.some((model) => model.id === "gpt-5.6")).toBe(true);
+  });
+
+  it("does not cache malformed successful-process Codex CLI output", async () => {
+    const runner = vi.fn(() => ({
+      status: 0,
+      stdout: JSON.stringify({ data: [] }),
+      stderr: "",
+      hasError: false,
+    }));
+    setCodexModelsRunnerForTests(runner);
+
+    await listAdapterModels("codex_local");
+    await listAdapterModels("codex_local");
+
+    expect(runner).toHaveBeenCalledTimes(2);
+  });
+
+  it("refreshes Codex CLI models on demand", async () => {
+    const runner = vi.fn()
+      .mockReturnValueOnce({ status: 0, stdout: JSON.stringify({ models: [{ slug: "gpt-5.7", visibility: "list" }] }), stderr: "", hasError: false })
+      .mockReturnValueOnce({ status: 0, stdout: JSON.stringify({ models: [{ slug: "gpt-5.8", visibility: "list" }] }), stderr: "", hasError: false });
+    setCodexModelsRunnerForTests(runner);
+
+    const initial = await listAdapterModels("codex_local");
+    const refreshed = await refreshAdapterModels("codex_local");
+
+    expect(runner).toHaveBeenCalledTimes(2);
+    expect(initial.some((model) => model.id === "gpt-5.7")).toBe(true);
+    expect(refreshed.some((model) => model.id === "gpt-5.8")).toBe(true);
+  });
+
+  it("preserves the last successful Codex CLI catalog after a failed refresh", async () => {
+    const runner = vi.fn()
+      .mockReturnValueOnce({ status: 0, stdout: JSON.stringify({ models: [{ slug: "gpt-5.7", visibility: "list" }] }), stderr: "", hasError: false })
+      .mockReturnValueOnce({ status: null, stdout: "", stderr: "", hasError: true });
+    setCodexModelsRunnerForTests(runner);
+
+    await listAdapterModels("codex_local");
+    const refreshed = await refreshAdapterModels("codex_local");
+
+    expect(refreshed.some((model) => model.id === "gpt-5.7")).toBe(true);
   });
 
   it("loads codex models dynamically and merges fallback options", async () => {
@@ -65,6 +265,39 @@ describe("adapter model listing", () => {
     expect(first).toEqual(second);
     expect(first.some((model) => model.id === "gpt-5-pro")).toBe(true);
     expect(first.some((model) => model.id === "codex-mini-latest")).toBe(true);
+  });
+
+  it("merges simultaneous Codex CLI and OpenAI catalogs with fallbacks", async () => {
+    process.env.OPENAI_API_KEY = "sk-test";
+    setCodexModelsRunnerForTests(() => ({
+      status: 0,
+      stdout: JSON.stringify({ models: [{ slug: "gpt-cli", visibility: "list" }] }),
+      stderr: "",
+      hasError: false,
+    }));
+    vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: async () => ({ data: [{ id: "gpt-api" }] }),
+    } as Response);
+
+    const models = await listAdapterModels("codex_local");
+
+    expect(models.map((model) => model.id)).toEqual(expect.arrayContaining(["gpt-cli", "gpt-api", "gpt-5.6"]));
+  });
+
+  it("caches fallbacks after a valid empty OpenAI model catalog", async () => {
+    process.env.OPENAI_API_KEY = "sk-test";
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: async () => ({ data: [] }),
+    } as Response);
+
+    const first = await listAdapterModels("codex_local");
+    const second = await listAdapterModels("codex_local");
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(first).toEqual(second);
+    expect(first.some((model) => model.id === "gpt-5.6")).toBe(true);
   });
 
   it("refreshes cached codex models on demand", async () => {
@@ -89,6 +322,42 @@ describe("adapter model listing", () => {
     expect(fetchSpy).toHaveBeenCalledTimes(2);
     expect(initial.some((model) => model.id === "gpt-5")).toBe(true);
     expect(refreshed.some((model) => model.id === "gpt-5.5")).toBe(true);
+  });
+
+  it("does not let an older Codex discovery overwrite a newer refresh", async () => {
+    process.env.OPENAI_API_KEY = "sk-test";
+    let resolveOld!: (response: Response) => void;
+    let resolveNew!: (response: Response) => void;
+    const oldResponse = new Promise<Response>((resolve) => {
+      resolveOld = resolve;
+    });
+    const newResponse = new Promise<Response>((resolve) => {
+      resolveNew = resolve;
+    });
+    const fetchSpy = vi.spyOn(globalThis, "fetch")
+      .mockReturnValueOnce(oldResponse)
+      .mockReturnValueOnce(newResponse);
+
+    const oldRequest = listAdapterModels("codex_local");
+    const refreshRequest = refreshAdapterModels("codex_local");
+
+    resolveNew({
+      ok: true,
+      json: async () => ({ data: [{ id: "codex-new-model" }] }),
+    } as Response);
+    const refreshed = await refreshRequest;
+    resolveOld({
+      ok: true,
+      json: async () => ({ data: [{ id: "codex-old-model" }] }),
+    } as Response);
+    const oldResult = await oldRequest;
+    const cachedResult = await listAdapterModels("codex_local");
+
+    expect(refreshed.some((model) => model.id === "codex-new-model")).toBe(true);
+    expect(oldResult.some((model) => model.id === "codex-old-model")).toBe(true);
+    expect(cachedResult.some((model) => model.id === "codex-new-model")).toBe(true);
+    expect(cachedResult.some((model) => model.id === "codex-old-model")).toBe(false);
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
   });
 
   it("falls back to static codex models when OpenAI model discovery fails", async () => {
@@ -141,6 +410,32 @@ describe("adapter model listing", () => {
     expect(first.some((model) => model.id === "auto")).toBe(true);
     expect(first.some((model) => model.id === "gpt-5.3-codex-high")).toBe(true);
     expect(first.some((model) => model.id === "composer-1")).toBe(true);
+  });
+
+  it("refreshes cached Cursor models on demand", async () => {
+    const runner = vi.fn()
+      .mockReturnValueOnce({
+        status: 0,
+        stdout: "Available models: cursor-old",
+        stderr: "",
+        hasError: false,
+      })
+      .mockReturnValueOnce({
+        status: 0,
+        stdout: "Available models: cursor-new",
+        stderr: "",
+        hasError: false,
+      });
+    setCursorModelsRunnerForTests(runner);
+
+    const initial = await listAdapterModels("cursor");
+    const cached = await listAdapterModels("cursor");
+    const refreshed = await refreshAdapterModels("cursor");
+
+    expect(runner).toHaveBeenCalledTimes(2);
+    expect(initial.some((model) => model.id === "cursor-old")).toBe(true);
+    expect(cached.some((model) => model.id === "cursor-old")).toBe(true);
+    expect(refreshed.some((model) => model.id === "cursor-new")).toBe(true);
   });
 
 });
