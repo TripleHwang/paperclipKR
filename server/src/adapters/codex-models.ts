@@ -20,6 +20,11 @@ type CodexModelsCommandResult = {
   hasError: boolean;
 };
 
+type ModelCatalogResult = {
+  success: boolean;
+  models: AdapterModel[];
+};
+
 let cached: { identity: string; expiresAt: number; models: AdapterModel[] } | null = null;
 
 function dedupeModels(models: AdapterModel[]): AdapterModel[] {
@@ -54,12 +59,12 @@ function cacheIdentity(command: string, apiKey: string | null): string {
   return `${command}:${keyPart}`;
 }
 
-export function parseCodexModelsOutput(stdout: string): AdapterModel[] {
+function parseCodexModelsCatalog(stdout: string): ModelCatalogResult {
   try {
     const payload = JSON.parse(stdout) as unknown;
-    if (typeof payload !== "object" || payload === null || Array.isArray(payload)) return [];
+    if (typeof payload !== "object" || payload === null || Array.isArray(payload)) return { success: false, models: [] };
     const entries = (payload as { models?: unknown }).models;
-    if (!Array.isArray(entries)) return [];
+    if (!Array.isArray(entries)) return { success: false, models: [] };
 
     const models: AdapterModel[] = [];
     for (const entry of entries) {
@@ -77,10 +82,14 @@ export function parseCodexModelsOutput(stdout: string): AdapterModel[] {
       const label = typeof displayName === "string" && displayName.trim() ? displayName.trim() : id;
       models.push({ id, label });
     }
-    return dedupeModels(models);
+    return { success: true, models: dedupeModels(models) };
   } catch {
-    return [];
+    return { success: false, models: [] };
   }
+}
+
+export function parseCodexModelsOutput(stdout: string): AdapterModel[] {
+  return parseCodexModelsCatalog(stdout).models;
 }
 
 function resolveCodexCommand(command: string): string {
@@ -135,13 +144,13 @@ function defaultCodexModelsRunner(): CodexModelsCommandResult {
 
 let codexModelsRunner: () => CodexModelsCommandResult = defaultCodexModelsRunner;
 
-function fetchCodexModelsFromCli(): AdapterModel[] {
+function fetchCodexModelsFromCli(): ModelCatalogResult {
   const result = codexModelsRunner();
-  if (result.status !== 0 || result.hasError) return [];
-  return parseCodexModelsOutput(result.stdout);
+  if (result.status !== 0 || result.hasError) return { success: false, models: [] };
+  return parseCodexModelsCatalog(result.stdout);
 }
 
-async function fetchOpenAiModels(apiKey: string): Promise<AdapterModel[]> {
+async function fetchOpenAiModels(apiKey: string): Promise<ModelCatalogResult> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), OPENAI_MODELS_TIMEOUT_MS);
   try {
@@ -149,10 +158,12 @@ async function fetchOpenAiModels(apiKey: string): Promise<AdapterModel[]> {
       headers: { Authorization: `Bearer ${apiKey}` },
       signal: controller.signal,
     });
-    if (!response.ok) return [];
+    if (!response.ok) return { success: false, models: [] };
 
-    const payload = (await response.json()) as { data?: unknown };
-    const data = Array.isArray(payload.data) ? payload.data : [];
+    const payload = (await response.json()) as unknown;
+    if (typeof payload !== "object" || payload === null || Array.isArray(payload)) return { success: false, models: [] };
+    const data = (payload as { data?: unknown }).data;
+    if (!Array.isArray(data)) return { success: false, models: [] };
     const models: AdapterModel[] = [];
     for (const item of data) {
       if (typeof item !== "object" || item === null) continue;
@@ -160,9 +171,9 @@ async function fetchOpenAiModels(apiKey: string): Promise<AdapterModel[]> {
       if (typeof id !== "string" || id.trim().length === 0) continue;
       models.push({ id, label: id });
     }
-    return dedupeModels(models);
+    return { success: true, models: dedupeModels(models) };
   } catch {
-    return [];
+    return { success: false, models: [] };
   } finally {
     clearTimeout(timeout);
   }
@@ -176,10 +187,10 @@ async function loadCodexModels(options?: { forceRefresh?: boolean }): Promise<Ad
   const now = Date.now();
   if (!forceRefresh && cached?.identity === identity && cached.expiresAt > now) return cached.models;
 
-  const cliModels = fetchCodexModelsFromCli();
-  const apiModels = apiKey ? await fetchOpenAiModels(apiKey) : [];
-  if (cliModels.length > 0 || apiModels.length > 0) {
-    const models = mergedWithFallback([...cliModels, ...apiModels]);
+  const cliCatalog = fetchCodexModelsFromCli();
+  const apiCatalog = apiKey ? await fetchOpenAiModels(apiKey) : { success: false, models: [] };
+  if (cliCatalog.success || apiCatalog.success) {
+    const models = mergedWithFallback([...cliCatalog.models, ...apiCatalog.models]);
     cached = { identity, expiresAt: now + OPENAI_MODELS_CACHE_TTL_MS, models };
     return models;
   }

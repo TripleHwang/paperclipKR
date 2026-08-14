@@ -129,6 +129,38 @@ describe("adapter model listing", () => {
     expect(runner).toHaveBeenCalledTimes(1);
   });
 
+  it("caches fallbacks after a valid empty Codex CLI catalog", async () => {
+    const runner = vi.fn(() => ({
+      status: 0,
+      stdout: JSON.stringify({ models: [] }),
+      stderr: "",
+      hasError: false,
+    }));
+    setCodexModelsRunnerForTests(runner);
+
+    const first = await listAdapterModels("codex_local");
+    const second = await listAdapterModels("codex_local");
+
+    expect(runner).toHaveBeenCalledTimes(1);
+    expect(first).toEqual(second);
+    expect(first.some((model) => model.id === "gpt-5.6")).toBe(true);
+  });
+
+  it("does not cache malformed successful-process Codex CLI output", async () => {
+    const runner = vi.fn(() => ({
+      status: 0,
+      stdout: JSON.stringify({ data: [] }),
+      stderr: "",
+      hasError: false,
+    }));
+    setCodexModelsRunnerForTests(runner);
+
+    await listAdapterModels("codex_local");
+    await listAdapterModels("codex_local");
+
+    expect(runner).toHaveBeenCalledTimes(2);
+  });
+
   it("refreshes Codex CLI models on demand", async () => {
     const runner = vi.fn()
       .mockReturnValueOnce({ status: 0, stdout: JSON.stringify({ models: [{ slug: "gpt-5.7", visibility: "list" }] }), stderr: "", hasError: false })
@@ -174,6 +206,21 @@ describe("adapter model listing", () => {
     expect(first).toEqual(second);
     expect(first.some((model) => model.id === "gpt-5-pro")).toBe(true);
     expect(first.some((model) => model.id === "codex-mini-latest")).toBe(true);
+  });
+
+  it("caches fallbacks after a valid empty OpenAI model catalog", async () => {
+    process.env.OPENAI_API_KEY = "sk-test";
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: async () => ({ data: [] }),
+    } as Response);
+
+    const first = await listAdapterModels("codex_local");
+    const second = await listAdapterModels("codex_local");
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(first).toEqual(second);
+    expect(first.some((model) => model.id === "gpt-5.6")).toBe(true);
   });
 
   it("refreshes cached codex models on demand", async () => {
