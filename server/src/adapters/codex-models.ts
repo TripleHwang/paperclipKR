@@ -20,6 +20,19 @@ type CodexModelsCommandResult = {
   hasError: boolean;
 };
 
+type CodexModelsSpawnResult = {
+  status: number | null;
+  stdout: string | null | undefined;
+  stderr: string | null | undefined;
+  error?: Error;
+};
+
+type CodexModelsSpawn = (
+  command: string,
+  args: string[],
+  options: { encoding: "utf8"; timeout: number; maxBuffer: number; windowsHide: true },
+) => CodexModelsSpawnResult;
+
 type ModelCatalogResult = {
   success: boolean;
   models: AdapterModel[];
@@ -111,16 +124,36 @@ function resolveCodexCommand(command: string): string {
   return command;
 }
 
-function quoteForCmd(value: string): string {
-  return `"${value.replace(/%/g, "%%").replace(/"/g, "\\\"")}"`;
+function hasUnsafeCmdValue(value: string): boolean {
+  return /["\r\n\0%!^&|<>()]/.test(value);
 }
+
+function quoteForCmd(value: string): string {
+  return `"${value}"`;
+}
+
+function defaultCodexModelsSpawn(
+  command: string,
+  args: string[],
+  options: { encoding: "utf8"; timeout: number; maxBuffer: number; windowsHide: true },
+): CodexModelsSpawnResult {
+  return spawnSync(command, args, options);
+}
+
+let codexModelsSpawn: CodexModelsSpawn = defaultCodexModelsSpawn;
 
 function defaultCodexModelsRunner(): CodexModelsCommandResult {
   const command = process.env.PAPERCLIP_CODEX_COMMAND?.trim() || "codex";
+  if (hasUnsafeCmdValue(command)) {
+    return { status: null, stdout: "", stderr: "", hasError: true };
+  }
   const executable = resolveCodexCommand(command);
   const isWindowsWrapper = process.platform === "win32" && /\.(cmd|bat)$/i.test(executable);
+  if (isWindowsWrapper && (!path.isAbsolute(executable) || !existsSync(executable) || hasUnsafeCmdValue(executable))) {
+    return { status: null, stdout: "", stderr: "", hasError: true };
+  }
   const result = isWindowsWrapper
-    ? spawnSync(path.join(process.env.SystemRoot || "C:\\Windows", "System32", "cmd.exe"), [
+    ? codexModelsSpawn(path.join(process.env.SystemRoot || "C:\\Windows", "System32", "cmd.exe"), [
       "/d", "/s", "/c", `${quoteForCmd(executable)} debug models`,
     ], {
       encoding: "utf8",
@@ -128,7 +161,7 @@ function defaultCodexModelsRunner(): CodexModelsCommandResult {
       maxBuffer: CODEX_MODELS_MAX_BUFFER_BYTES,
       windowsHide: true,
     })
-    : spawnSync(executable, ["debug", "models"], {
+    : codexModelsSpawn(executable, ["debug", "models"], {
       encoding: "utf8",
       timeout: CODEX_MODELS_TIMEOUT_MS,
       maxBuffer: CODEX_MODELS_MAX_BUFFER_BYTES,
@@ -213,4 +246,8 @@ export function resetCodexModelsCacheForTests() {
 
 export function setCodexModelsRunnerForTests(runner: (() => CodexModelsCommandResult) | null) {
   codexModelsRunner = runner ?? defaultCodexModelsRunner;
+}
+
+export function setCodexModelsSpawnForTests(spawn: CodexModelsSpawn | null) {
+  codexModelsSpawn = spawn ?? defaultCodexModelsSpawn;
 }

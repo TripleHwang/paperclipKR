@@ -1,4 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { models as codexFallbackModels } from "@paperclipai/adapter-codex-local";
 import { models as cursorFallbackModels } from "@paperclipai/adapter-cursor-local";
 import { models as opencodeFallbackModels } from "@paperclipai/adapter-opencode-local";
@@ -7,6 +10,7 @@ import { listAdapterModels, listServerAdapters, refreshAdapterModels } from "../
 import {
   parseCodexModelsOutput,
   resetCodexModelsCacheForTests,
+  setCodexModelsSpawnForTests,
   setCodexModelsRunnerForTests,
 } from "../adapters/codex-models.js";
 import { resetCursorModelsCacheForTests, setCursorModelsRunnerForTests } from "../adapters/cursor-models.js";
@@ -24,6 +28,7 @@ describe("adapter model listing", () => {
     delete process.env.PAPERCLIP_CODEX_COMMAND;
     delete process.env.PAPERCLIP_OPENCODE_COMMAND;
     resetCodexModelsCacheForTests();
+    setCodexModelsSpawnForTests(null);
     setCodexModelsRunnerForTests(() => ({
       status: null,
       stdout: "",
@@ -112,6 +117,60 @@ describe("adapter model listing", () => {
 
     expect(models.some((model) => model.id === "gpt-5.7-preview" && model.label === "GPT 5.7 Preview")).toBe(true);
     expect(models.some((model) => model.id === "gpt-5.6")).toBe(true);
+  });
+
+  it("runs native Codex discovery with fixed args and bounded hidden output", async () => {
+    const spawn = vi.fn(() => ({
+      status: 0,
+      stdout: JSON.stringify({ models: [] }),
+      stderr: "",
+      error: undefined,
+    }));
+    process.env.PAPERCLIP_CODEX_COMMAND = process.execPath;
+    setCodexModelsRunnerForTests(null);
+    setCodexModelsSpawnForTests(spawn);
+
+    await listAdapterModels("codex_local");
+
+    expect(spawn).toHaveBeenCalledWith(process.execPath, ["debug", "models"], {
+      encoding: "utf8",
+      timeout: 10_000,
+      maxBuffer: 2 * 1024 * 1024,
+      windowsHide: true,
+    });
+  });
+
+  it("uses cmd.exe only for a resolved Windows command wrapper", async () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-codex-models-"));
+    const wrapper = path.join(tempDir, "codex.cmd");
+    fs.writeFileSync(wrapper, "@echo off\r\n");
+    const spawn = vi.fn(() => ({ status: 0, stdout: JSON.stringify({ models: [] }), stderr: "", error: undefined }));
+    process.env.PAPERCLIP_CODEX_COMMAND = wrapper;
+    setCodexModelsRunnerForTests(null);
+    setCodexModelsSpawnForTests(spawn);
+
+    try {
+      await listAdapterModels("codex_local");
+      expect(spawn).toHaveBeenCalledWith(
+        path.join(process.env.SystemRoot || "C:\\Windows", "System32", "cmd.exe"),
+        ["/d", "/s", "/c", `"${wrapper}" debug models`],
+        expect.objectContaining({ windowsHide: true }),
+      );
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("does not spawn an injection-shaped Codex command override", async () => {
+    const spawn = vi.fn(() => ({ status: 0, stdout: JSON.stringify({ models: [] }), stderr: "", error: undefined }));
+    process.env.PAPERCLIP_CODEX_COMMAND = 'C:\\tools\\codex.cmd" & whoami';
+    setCodexModelsRunnerForTests(null);
+    setCodexModelsSpawnForTests(spawn);
+
+    const models = await listAdapterModels("codex_local");
+
+    expect(spawn).not.toHaveBeenCalled();
+    expect(models).toEqual(codexFallbackModels);
   });
 
   it("caches Codex CLI model discovery on normal calls", async () => {
@@ -206,6 +265,24 @@ describe("adapter model listing", () => {
     expect(first).toEqual(second);
     expect(first.some((model) => model.id === "gpt-5-pro")).toBe(true);
     expect(first.some((model) => model.id === "codex-mini-latest")).toBe(true);
+  });
+
+  it("merges simultaneous Codex CLI and OpenAI catalogs with fallbacks", async () => {
+    process.env.OPENAI_API_KEY = "sk-test";
+    setCodexModelsRunnerForTests(() => ({
+      status: 0,
+      stdout: JSON.stringify({ models: [{ slug: "gpt-cli", visibility: "list" }] }),
+      stderr: "",
+      hasError: false,
+    }));
+    vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: async () => ({ data: [{ id: "gpt-api" }] }),
+    } as Response);
+
+    const models = await listAdapterModels("codex_local");
+
+    expect(models.map((model) => model.id)).toEqual(expect.arrayContaining(["gpt-cli", "gpt-api", "gpt-5.6"]));
   });
 
   it("caches fallbacks after a valid empty OpenAI model catalog", async () => {
