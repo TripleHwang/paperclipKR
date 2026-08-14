@@ -49,4 +49,27 @@ describe("pi models", () => {
     expect(cached).toEqual([{ id: "xai/old", label: "xai/old" }]);
     expect(refreshed).toEqual([{ id: "xai/new", label: "xai/new" }]);
   });
+
+  it("does not let an in-flight discovery overwrite a refreshed catalog", async () => {
+    const oldModels = [{ id: "xai/old", label: "xai/old" }];
+    const newModels = [{ id: "xai/new", label: "xai/new" }];
+    let resolveOld!: (models: typeof oldModels) => void;
+    const oldDiscovery = new Promise<typeof oldModels>((resolve) => {
+      resolveOld = resolve;
+    });
+    const discovery = vi.fn()
+      .mockImplementationOnce(() => oldDiscovery)
+      .mockResolvedValueOnce(newModels);
+    setPiModelsDiscoveryForTests(discovery);
+
+    const oldList = listPiModels();
+    const refreshed = await refreshPiModels();
+    resolveOld(oldModels);
+    await oldList;
+    const cached = await listPiModels();
+
+    expect(refreshed).toEqual(newModels);
+    expect(cached).toEqual(newModels);
+    expect(discovery).toHaveBeenCalledTimes(2);
+  });
 });
