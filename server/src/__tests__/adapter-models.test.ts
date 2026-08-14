@@ -42,6 +42,9 @@ describe("adapter model listing", () => {
     const models = await listAdapterModels("codex_local");
 
     expect(models).toEqual(codexFallbackModels);
+    for (const modelId of ["gpt-5.6", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"]) {
+      expect(models.some((model) => model.id === modelId)).toBe(true);
+    }
     expect(models.some((model) => model.id === "gpt-5.5")).toBe(true);
     expect(fetchSpy).not.toHaveBeenCalled();
   });
