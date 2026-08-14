@@ -247,9 +247,11 @@ function runVitest(args, label) {
   };
   mkdirSync(env.PAPERCLIP_HOME, { recursive: true });
   mkdirSync(env.TMPDIR, { recursive: true });
-  const result = spawnSync("pnpm", ["exec", "vitest", "run", ...args], {
+  const pnpmCommand = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
+  const result = spawnSync(pnpmCommand, ["exec", "vitest", "run", ...args], {
     cwd: repoRoot,
     env,
+    shell: process.platform === "win32",
     stdio: "inherit",
   });
   if (result.error) {

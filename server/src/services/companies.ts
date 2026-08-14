@@ -124,21 +124,26 @@ export function companyService(db: Db) {
     return "A".repeat(attempt - 1);
   }
 
-  function readErrorField(error: unknown, field: string) {
-    if (typeof error !== "object" || error === null || !(field in error)) return undefined;
-    const value = (error as Record<string, unknown>)[field];
-    return typeof value === "string" ? value : undefined;
-  }
-
-  function isIssuePrefixConflict(error: unknown): boolean {
-    const code = readErrorField(error, "code") ?? readErrorField(error, "sqlState");
-    const constraint = readErrorField(error, "constraint") ?? readErrorField(error, "constraint_name");
-    if (code === "23505" && constraint === "companies_issue_prefix_idx") return true;
-
-    const cause = typeof error === "object" && error !== null && "cause" in error
-      ? (error as { cause?: unknown }).cause
-      : undefined;
-    return cause ? isIssuePrefixConflict(cause) : false;
+  function isIssuePrefixConflict(error: unknown) {
+    const seen = new Set<unknown>();
+    let current = error;
+    while (typeof current === "object" && current !== null && !seen.has(current)) {
+      seen.add(current);
+      const maybe = current as {
+        code?: string;
+        sqlState?: string;
+        constraint?: string;
+        constraint_name?: string;
+        cause?: unknown;
+      };
+      const code = maybe.code ?? maybe.sqlState;
+      const constraint = maybe.constraint ?? maybe.constraint_name;
+      if (code === "23505" && constraint === "companies_issue_prefix_idx") {
+        return true;
+      }
+      current = maybe.cause;
+    }
+    return false;
   }
 
   async function createCompanyWithUniquePrefix(data: typeof companies.$inferInsert) {
@@ -269,7 +274,17 @@ export function companyService(db: Db) {
     remove: (id: string) =>
       db.transaction(async (tx) => {
         // Delete from child tables in dependency order
+        const companyRunIds = await tx
+          .select({ id: heartbeatRuns.id })
+          .from(heartbeatRuns)
+          .where(eq(heartbeatRuns.companyId, id));
+
         await tx.delete(heartbeatRunEvents).where(eq(heartbeatRunEvents.companyId, id));
+        if (companyRunIds.length > 0) {
+          await tx
+            .delete(heartbeatRunEvents)
+            .where(inArray(heartbeatRunEvents.runId, companyRunIds.map((run) => run.id)));
+        }
         await tx.delete(agentTaskSessions).where(eq(agentTaskSessions.companyId, id));
         await tx.delete(activityLog).where(eq(activityLog.companyId, id));
         await tx.delete(heartbeatRuns).where(eq(heartbeatRuns.companyId, id));

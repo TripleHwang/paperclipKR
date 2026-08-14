@@ -55,6 +55,7 @@ export function isValidOpenCodeModelId(value: unknown): value is string {
 
 export const models: Array<{ id: string; label: string }> = [
   { id: DEFAULT_OPENCODE_LOCAL_MODEL, label: DEFAULT_OPENCODE_LOCAL_MODEL },
+  { id: "ollama-cloud/deepseek-v4-pro", label: "ollama-cloud/deepseek-v4-pro" },
   { id: "openai/gpt-5.4", label: "openai/gpt-5.4" },
   { id: "openai/gpt-5.2", label: "openai/gpt-5.2" },
   { id: "openai/gpt-5.1-codex-max", label: "openai/gpt-5.1-codex-max" },
@@ -65,10 +66,10 @@ export const modelProfiles: AdapterModelProfileDefinition[] = [
   {
     key: "cheap",
     label: "Cheap",
-    description: "Use OpenCode's known Codex mini model as the budget lane.",
+    description: "Use Ollama Cloud DeepSeek V4 Pro with max thinking for the cheap lane.",
     adapterConfig: {
-      model: "openai/gpt-5.1-codex-mini",
-      variant: "low",
+      model: "ollama-cloud/deepseek-v4-pro",
+      variant: "max",
     },
     source: "adapter_default",
   },
