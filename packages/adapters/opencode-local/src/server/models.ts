@@ -156,6 +156,8 @@ export async function discoverOpenCodeModels(input: {
   return sortModels(parseOpenCodeModelsOutput(result.stdout));
 }
 
+let openCodeModelsDiscovery: typeof discoverOpenCodeModels = discoverOpenCodeModels;
+
 export async function discoverOpenCodeModelsCached(input: {
   command?: unknown;
   cwd?: unknown;
@@ -170,7 +172,7 @@ export async function discoverOpenCodeModelsCached(input: {
   const cached = discoveryCache.get(key);
   if (cached && cached.expiresAt > now) return cached.models;
 
-  const models = await discoverOpenCodeModels({ command, cwd, env });
+  const models = await openCodeModelsDiscovery({ command, cwd, env });
   discoveryCache.set(key, { expiresAt: now + MODELS_CACHE_TTL_MS, models });
   return models;
 }
@@ -211,6 +213,21 @@ export async function listOpenCodeModels(): Promise<AdapterModel[]> {
   }
 }
 
-export function resetOpenCodeModelsCacheForTests() {
+function clearOpenCodeModelsCache() {
   discoveryCache.clear();
+}
+
+export async function refreshOpenCodeModels(): Promise<AdapterModel[]> {
+  clearOpenCodeModelsCache();
+  return listOpenCodeModels();
+}
+
+export function resetOpenCodeModelsCacheForTests() {
+  clearOpenCodeModelsCache();
+}
+
+export function setOpenCodeModelsDiscoveryForTests(
+  discovery: typeof discoverOpenCodeModels | null,
+) {
+  openCodeModelsDiscovery = discovery ?? discoverOpenCodeModels;
 }

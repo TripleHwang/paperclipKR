@@ -1,14 +1,17 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   ensureOpenCodeModelConfiguredAndAvailable,
   listOpenCodeModels,
   requireOpenCodeModelId,
+  refreshOpenCodeModels,
   resetOpenCodeModelsCacheForTests,
+  setOpenCodeModelsDiscoveryForTests,
 } from "./models.js";
 
 describe("openCode models", () => {
   afterEach(() => {
     delete process.env.PAPERCLIP_OPENCODE_COMMAND;
+    setOpenCodeModelsDiscoveryForTests(null);
     resetOpenCodeModelsCacheForTests();
   });
 
@@ -43,5 +46,21 @@ describe("openCode models", () => {
         model: "openai/gpt-5",
       }),
     ).rejects.toThrow("Failed to start command");
+  });
+
+  it("refreshes the cached model catalog on demand", async () => {
+    const discovery = vi.fn()
+      .mockResolvedValueOnce([{ id: "openai/old", label: "openai/old" }])
+      .mockResolvedValueOnce([{ id: "openai/new", label: "openai/new" }]);
+    setOpenCodeModelsDiscoveryForTests(discovery);
+
+    const initial = await listOpenCodeModels();
+    const cached = await listOpenCodeModels();
+    const refreshed = await refreshOpenCodeModels();
+
+    expect(discovery).toHaveBeenCalledTimes(2);
+    expect(initial).toEqual([{ id: "openai/old", label: "openai/old" }]);
+    expect(cached).toEqual([{ id: "openai/old", label: "openai/old" }]);
+    expect(refreshed).toEqual([{ id: "openai/new", label: "openai/new" }]);
   });
 });

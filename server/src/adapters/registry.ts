@@ -96,6 +96,7 @@ import {
   testEnvironment as openCodeTestEnvironment,
   sessionCodec as openCodeSessionCodec,
   listOpenCodeModels,
+  refreshOpenCodeModels,
 } from "@paperclipai/adapter-opencode-local/server";
 import {
   agentConfigurationDoc as openCodeAgentConfigurationDoc,
@@ -111,7 +112,7 @@ import {
   models as openclawGatewayModels,
 } from "@paperclipai/adapter-openclaw-gateway";
 import { listCodexModels, refreshCodexModels } from "./codex-models.js";
-import { listCursorModels } from "./cursor-models.js";
+import { listCursorModels, refreshCursorModels } from "./cursor-models.js";
 import {
   execute as piExecute,
   listPiSkills,
@@ -119,6 +120,7 @@ import {
   testEnvironment as piTestEnvironment,
   sessionCodec as piSessionCodec,
   listPiModels,
+  refreshPiModels,
 } from "@paperclipai/adapter-pi-local/server";
 import {
   agentConfigurationDoc as piAgentConfigurationDoc,
@@ -318,6 +320,7 @@ const cursorLocalAdapter: ServerAdapterModule = {
   models: cursorModels,
   modelProfiles: cursorModelProfiles,
   listModels: listCursorModels,
+  refreshModels: refreshCursorModels,
   supportsLocalAgentJwt: true,
   supportsInstructionsBundle: true,
   instructionsPathKey: "instructionsFilePath",
@@ -403,6 +406,7 @@ const openCodeLocalAdapter: ServerAdapterModule = {
   modelProfiles: openCodeModelProfiles,
   sessionManagement: getAdapterSessionManagement("opencode_local") ?? undefined,
   listModels: listOpenCodeModels,
+  refreshModels: refreshOpenCodeModels,
   supportsLocalAgentJwt: true,
   supportsInstructionsBundle: true,
   instructionsPathKey: "instructionsFilePath",
@@ -422,6 +426,7 @@ const piLocalAdapter: ServerAdapterModule = {
   models: [],
   modelProfiles: piModelProfiles,
   listModels: listPiModels,
+  refreshModels: refreshPiModels,
   supportsLocalAgentJwt: true,
   supportsInstructionsBundle: true,
   instructionsPathKey: "instructionsFilePath",

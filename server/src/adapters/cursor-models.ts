@@ -161,6 +161,11 @@ export async function listCursorModels(): Promise<AdapterModel[]> {
   return dedupeModels(cursorFallbackModels);
 }
 
+export async function refreshCursorModels(): Promise<AdapterModel[]> {
+  cached = null;
+  return listCursorModels();
+}
+
 export function resetCursorModelsCacheForTests() {
   cached = null;
 }

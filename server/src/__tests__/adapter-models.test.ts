@@ -376,4 +376,30 @@ describe("adapter model listing", () => {
     expect(first.some((model) => model.id === "composer-1")).toBe(true);
   });
 
+  it("refreshes cached Cursor models on demand", async () => {
+    const runner = vi.fn()
+      .mockReturnValueOnce({
+        status: 0,
+        stdout: "Available models: cursor-old",
+        stderr: "",
+        hasError: false,
+      })
+      .mockReturnValueOnce({
+        status: 0,
+        stdout: "Available models: cursor-new",
+        stderr: "",
+        hasError: false,
+      });
+    setCursorModelsRunnerForTests(runner);
+
+    const initial = await listAdapterModels("cursor");
+    const cached = await listAdapterModels("cursor");
+    const refreshed = await refreshAdapterModels("cursor");
+
+    expect(runner).toHaveBeenCalledTimes(2);
+    expect(initial.some((model) => model.id === "cursor-old")).toBe(true);
+    expect(cached.some((model) => model.id === "cursor-old")).toBe(true);
+    expect(refreshed.some((model) => model.id === "cursor-new")).toBe(true);
+  });
+
 });
