@@ -39,6 +39,7 @@ type ModelCatalogResult = {
 };
 
 let cached: { identity: string; expiresAt: number; models: AdapterModel[] } | null = null;
+let discoveryGeneration = 0;
 
 function dedupeModels(models: AdapterModel[]): AdapterModel[] {
   const seen = new Set<string>();
@@ -219,12 +220,15 @@ async function loadCodexModels(options?: { forceRefresh?: boolean }): Promise<Ad
   const identity = cacheIdentity(command, apiKey);
   const now = Date.now();
   if (!forceRefresh && cached?.identity === identity && cached.expiresAt > now) return cached.models;
+  const generation = ++discoveryGeneration;
 
   const cliCatalog = fetchCodexModelsFromCli();
   const apiCatalog = apiKey ? await fetchOpenAiModels(apiKey) : { success: false, models: [] };
   if (cliCatalog.success || apiCatalog.success) {
     const models = mergedWithFallback([...cliCatalog.models, ...apiCatalog.models]);
-    cached = { identity, expiresAt: now + OPENAI_MODELS_CACHE_TTL_MS, models };
+    if (generation === discoveryGeneration) {
+      cached = { identity, expiresAt: now + OPENAI_MODELS_CACHE_TTL_MS, models };
+    }
     return models;
   }
 
@@ -242,6 +246,7 @@ export async function refreshCodexModels(): Promise<AdapterModel[]> {
 
 export function resetCodexModelsCacheForTests() {
   cached = null;
+  discoveryGeneration = 0;
 }
 
 export function setCodexModelsRunnerForTests(runner: (() => CodexModelsCommandResult) | null) {

@@ -324,6 +324,42 @@ describe("adapter model listing", () => {
     expect(refreshed.some((model) => model.id === "gpt-5.5")).toBe(true);
   });
 
+  it("does not let an older Codex discovery overwrite a newer refresh", async () => {
+    process.env.OPENAI_API_KEY = "sk-test";
+    let resolveOld!: (response: Response) => void;
+    let resolveNew!: (response: Response) => void;
+    const oldResponse = new Promise<Response>((resolve) => {
+      resolveOld = resolve;
+    });
+    const newResponse = new Promise<Response>((resolve) => {
+      resolveNew = resolve;
+    });
+    const fetchSpy = vi.spyOn(globalThis, "fetch")
+      .mockReturnValueOnce(oldResponse)
+      .mockReturnValueOnce(newResponse);
+
+    const oldRequest = listAdapterModels("codex_local");
+    const refreshRequest = refreshAdapterModels("codex_local");
+
+    resolveNew({
+      ok: true,
+      json: async () => ({ data: [{ id: "codex-new-model" }] }),
+    } as Response);
+    const refreshed = await refreshRequest;
+    resolveOld({
+      ok: true,
+      json: async () => ({ data: [{ id: "codex-old-model" }] }),
+    } as Response);
+    const oldResult = await oldRequest;
+    const cachedResult = await listAdapterModels("codex_local");
+
+    expect(refreshed.some((model) => model.id === "codex-new-model")).toBe(true);
+    expect(oldResult.some((model) => model.id === "codex-old-model")).toBe(true);
+    expect(cachedResult.some((model) => model.id === "codex-new-model")).toBe(true);
+    expect(cachedResult.some((model) => model.id === "codex-old-model")).toBe(false);
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+  });
+
   it("falls back to static codex models when OpenAI model discovery fails", async () => {
     process.env.OPENAI_API_KEY = "sk-test";
     vi.spyOn(globalThis, "fetch").mockResolvedValue({
